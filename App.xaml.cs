@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 
 namespace Hygeia;
@@ -18,6 +19,13 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            MessageBox(IntPtr.Zero, "hygeia 只支持 64 位 Windows 11。\nhygeia requires 64-bit Windows 11.", "hygeia", 0x10);
+            Environment.Exit(1);
+            return;
+        }
+
         var commandLine = Environment.GetCommandLineArgs();
         if (commandLine.Any(arg => arg == "--verify"))
         {
@@ -35,4 +43,7 @@ public partial class App : Application
         _window = new MainWindow(background);
         _window.Activate();
     }
+
+    [DllImport("user32", CharSet = CharSet.Unicode, EntryPoint = "MessageBoxW")]
+    static extern int MessageBox(IntPtr owner, string text, string caption, uint type);
 }

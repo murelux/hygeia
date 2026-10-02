@@ -52,10 +52,20 @@ public static class FanSettingsStore
 
     public static void Save(FanSettings settings)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+        var directory = Path.GetDirectoryName(FilePath)!;
+        Directory.CreateDirectory(directory);
         settings.Language = UiText.Code;
         settings.CpuPoints = FanCurves.Normalize(settings.CpuPoints);
         settings.GpuPoints = FanCurves.Normalize(settings.GpuPoints);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, Json));
+        var temp = FilePath + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(settings, Json));
+        if (File.Exists(FilePath))
+        {
+            File.Replace(temp, FilePath, null);
+        }
+        else
+        {
+            File.Move(temp, FilePath);
+        }
     }
 }

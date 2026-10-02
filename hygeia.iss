@@ -2,7 +2,7 @@
 #define MyAppVersion "0.1.0-alpha.1"
 #endif
 #ifndef PublishDir
-#define PublishDir "..\publish"
+#define PublishDir "publish"
 #endif
 
 #define MyAppName "hygeia"
@@ -18,7 +18,7 @@ DefaultDirName={autopf}\hygeia
 DisableDirPage=no
 DefaultGroupName=hygeia
 DisableProgramGroupPage=yes
-OutputDir=..\dist
+OutputDir=dist
 OutputBaseFilename=hygeia-{#MyAppVersion}-setup
 Compression=lzma2
 SolidCompression=yes
@@ -26,6 +26,7 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
+MinVersion=10.0.22000
 UninstallDisplayIcon={app}\{#MyAppExeName}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductName=hygeia

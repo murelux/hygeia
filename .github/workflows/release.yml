@@ -19,7 +19,7 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Publish
-        run: dotnet publish hygeia/hygeia.csproj -c Release -o publish
+        run: dotnet publish hygeia.csproj -c Release -o publish
 
       - name: Portable zip
         shell: pwsh
@@ -34,7 +34,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" "/DPublishDir=..\publish" installer\hygeia.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" "/DPublishDir=publish" hygeia.iss
 
       - name: Publish GitHub Release
         env:

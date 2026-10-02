@@ -17,7 +17,6 @@ public sealed class TemperatureReader : IDisposable
                 FileName = "nvidia-smi",
                 Arguments = "--query-gpu=temperature.gpu --format=csv,noheader,nounits",
                 RedirectStandardOutput = true,
-                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
@@ -27,8 +26,21 @@ public sealed class TemperatureReader : IDisposable
                 return null;
             }
 
+            if (!process.WaitForExit(2000))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    // The process already ended.
+                }
+
+                return null;
+            }
+
             var text = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(2000);
             var line = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
             return int.TryParse(line, out var value) && value is >= 10 and <= 125 ? value : null;
         }

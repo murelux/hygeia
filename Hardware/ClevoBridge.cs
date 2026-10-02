@@ -67,7 +67,7 @@ public sealed class ClevoBridge : IDisposable
             var package = ReadPackage();
             if (package is { Length: >= 32 })
             {
-                return DecodePackage(package, Legacy(CmdFanCpu), Legacy(CmdFanGpu));
+                return DecodePackage(package);
             }
 
             return new FanBoard
@@ -198,23 +198,34 @@ public sealed class ClevoBridge : IDisposable
         return data;
     }
 
-    static FanBoard DecodePackage(byte[] data, FanReading cpuLegacy, FanReading gpuLegacy)
+    FanBoard DecodePackage(byte[] data)
     {
         return new FanBoard
         {
-            Cpu = FromPackage(data, 2, 0x10, 0x12, cpuLegacy),
-            Gpu = FromPackage(data, 4, 0x13, 0x15, gpuLegacy)
+            Cpu = FromPackage(data, 2, 0x10, 0x12, CmdFanCpu),
+            Gpu = FromPackage(data, 4, 0x13, 0x15, CmdFanGpu)
         };
     }
 
-    static FanReading FromPackage(byte[] data, int tachOffset, int dutyOffset, int tempOffset, FanReading legacy)
+    FanReading FromPackage(byte[] data, int tachOffset, int dutyOffset, int tempOffset, uint legacyCommand)
     {
         var tach = data.Length > tachOffset + 1 ? (data[tachOffset] << 8) | data[tachOffset + 1] : 0;
-        var dutyRaw = data.Length > dutyOffset ? data[dutyOffset] : legacy.DutyRaw;
-        var heatsink = data.Length > tempOffset ? data[tempOffset] : legacy.HeatsinkC;
-        if (heatsink is <= 0 or > 125)
+        var dutyMissing = data.Length <= dutyOffset;
+        var tempMissing = data.Length <= tempOffset;
+        var dutyRaw = dutyMissing ? 0 : data[dutyOffset];
+        var heatsink = tempMissing ? 0 : data[tempOffset];
+        if (dutyMissing || tempMissing || heatsink is <= 0 or > 125)
         {
-            heatsink = legacy.HeatsinkC;
+            var legacy = Legacy(legacyCommand);
+            if (dutyMissing)
+            {
+                dutyRaw = legacy.DutyRaw;
+            }
+
+            if (tempMissing || heatsink is <= 0 or > 125)
+            {
+                heatsink = legacy.HeatsinkC;
+            }
         }
 
         var rpm = TachToRpm(tach);

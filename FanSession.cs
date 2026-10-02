@@ -2,12 +2,6 @@ using Hygeia.Hardware;
 
 namespace Hygeia;
 
-public enum FanMode
-{
-    Auto,
-    Manual
-}
-
 public sealed class FanSample
 {
     public required FanBoard Fans { get; init; }
@@ -22,9 +16,6 @@ public sealed class FanSample
 
 public sealed class FanSession : IDisposable
 {
-    const int EmergencyC = 95;
-    const int EmergencyReleaseC = 90;
-
     readonly ClevoBridge _bridge;
     readonly TemperatureReader _temps = new();
     readonly CancellationTokenSource _cancel = new();
@@ -95,27 +86,24 @@ public sealed class FanSession : IDisposable
                 var fans = _bridge.Read();
                 var cpuCore = _temps.ReadCpuCore();
                 var gpuCore = _temps.ReadGpuCore();
-                var cpuShown = ControlTemp(cpuCore, fans.Cpu);
-                var gpuShown = ControlTemp(gpuCore, fans.Gpu);
+                var cpuShown = FanControl.ControlTemp(cpuCore, fans.Cpu.Present, fans.Cpu.HeatsinkC);
+                var gpuShown = FanControl.ControlTemp(gpuCore, fans.Gpu.Present, fans.Gpu.HeatsinkC);
                 var mode = Mode;
-                var emergency = DecideEmergency(cpuShown, gpuShown, fans);
-                var status = UiText.Following;
+                var emergency = FanControl.NextEmergency(_emergencyLatched, cpuShown, gpuShown);
+                _emergencyLatched = emergency;
+                FanPoint[] cpuPoints;
+                FanPoint[] gpuPoints;
+                lock (_pointsGate)
+                {
+                    cpuPoints = _cpuPoints.ToArray();
+                    gpuPoints = _gpuPoints.ToArray();
+                }
 
-                if (emergency)
-                {
-                    _bridge.SetDuty(100, 100);
-                    _handedToFirmware = false;
-                    status = UiText.Emergency;
-                }
-                else if (mode == FanMode.Manual)
-                {
-                    var cpuDuty = Volatile.Read(ref _manualCpu);
-                    var gpuDuty = Volatile.Read(ref _manualGpu);
-                    _bridge.SetDuty(cpuDuty, gpuDuty);
-                    _handedToFirmware = false;
-                    status = UiText.Manual(cpuDuty, gpuDuty);
-                }
-                else if (cpuShown is null && gpuShown is null)
+                var manualCpu = Volatile.Read(ref _manualCpu);
+                var manualGpu = Volatile.Read(ref _manualGpu);
+                var command = FanControl.Choose(mode, cpuShown, gpuShown, manualCpu, manualGpu, emergency, cpuPoints, gpuPoints);
+                var status = UiText.Following;
+                if (command.Kind == FanWrite.Firmware)
                 {
                     if (!_handedToFirmware)
                     {
@@ -125,21 +113,23 @@ public sealed class FanSession : IDisposable
 
                     status = UiText.NoTemp;
                 }
+                else if (emergency)
+                {
+                    _bridge.SetDuty(command.Cpu, command.Gpu);
+                    _handedToFirmware = false;
+                    status = UiText.Emergency;
+                }
+                else if (mode == FanMode.Manual)
+                {
+                    _bridge.SetDuty(command.Cpu, command.Gpu);
+                    _handedToFirmware = false;
+                    status = UiText.Manual(command.Cpu, command.Gpu);
+                }
                 else
                 {
-                    FanPoint[] cpuPoints;
-                    FanPoint[] gpuPoints;
-                    lock (_pointsGate)
-                    {
-                        cpuPoints = _cpuPoints.ToArray();
-                        gpuPoints = _gpuPoints.ToArray();
-                    }
-
-                    var cpuDuty = cpuShown is null ? 40 : FanCurves.Interpolate(cpuShown.Value, cpuPoints);
-                    var gpuDuty = gpuShown is null ? cpuDuty : FanCurves.Interpolate(gpuShown.Value, gpuPoints);
-                    _bridge.SetDuty(cpuDuty, gpuDuty);
+                    _bridge.SetDuty(command.Cpu, command.Gpu);
                     _handedToFirmware = false;
-                    status = UiText.Auto(cpuDuty, gpuDuty);
+                    status = UiText.Auto(command.Cpu, command.Gpu);
                 }
 
                 _status = status;
@@ -206,31 +196,6 @@ public sealed class FanSession : IDisposable
                 break;
             }
         }
-    }
-
-    static int? ControlTemp(int? core, FanReading fan)
-    {
-        if (core is >= 10 and <= 125)
-        {
-            return core;
-        }
-
-        return fan.Present && fan.HeatsinkC is >= 10 and <= 125 ? fan.HeatsinkC : null;
-    }
-
-    bool DecideEmergency(int? cpu, int? gpu, FanBoard fans)
-    {
-        var hottest = new int?[] { cpu, gpu, fans.Cpu.HeatsinkC, fans.Gpu.HeatsinkC }.Max();
-        if (hottest >= EmergencyC)
-        {
-            _emergencyLatched = true;
-        }
-        else if (hottest <= EmergencyReleaseC)
-        {
-            _emergencyLatched = false;
-        }
-
-        return _emergencyLatched;
     }
 
     public void Dispose()

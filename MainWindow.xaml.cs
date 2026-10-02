@@ -14,8 +14,10 @@ public sealed partial class MainWindow : Window
     readonly FanSettings _settings;
     readonly bool _startHidden;
     FanSession? _session;
+    MachineDetails? _machine;
     bool _loading = true;
     bool _allowClose;
+    string? _saveError;
     bool _rebuilding;
 
     public MainWindow(bool startHidden)
@@ -24,7 +26,7 @@ public sealed partial class MainWindow : Window
         _settings = FanSettingsStore.Load();
         InitializeComponent();
         _queue = DispatcherQueue;
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(960, 860));
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 780));
         AppWindow.Closing += OnAppClosing;
         ApplySettings();
         _loading = false;
@@ -40,8 +42,24 @@ public sealed partial class MainWindow : Window
             StatusText.Text = ex.Message;
         }
 
+        _ = Task.Run(MachineDetails.Read).ContinueWith(task =>
+        {
+            if (!task.IsCompletedSuccessfully)
+            {
+                return;
+            }
+
+            _queue.TryEnqueue(() =>
+            {
+                _machine = task.Result;
+                ApplyLanguage();
+            });
+        });
         TrayIcon.Icon = LoadTrayIcon();
         TrayIcon.LeftClickCommand = new TrayCommand(ShowFromTray);
+        TrayIcon.RightClickCommand = new TrayCommand(OpenTrayMenu);
+        ShowItem.Command = new TrayCommand(ShowFromTray);
+        ExitItem.Command = new TrayCommand(ExitFromTray);
         if (_startHidden)
         {
             RootGrid.Loaded += (_, _) => AppWindow.Hide();
@@ -75,6 +93,7 @@ public sealed partial class MainWindow : Window
         CpuSlider.Value = _settings.ManualCpu;
         GpuSlider.Value = _settings.ManualGpu;
         LanguageBox.SelectedItem = UiText.English ? EnglishItem : ChineseItem;
+        Nav.SelectedItem = FansNav;
         ApplyLanguage();
         StartupBox.IsChecked = StartupRegistration.IsEnabled();
         if (_settings.ReadMode() == FanMode.Manual)
@@ -91,10 +110,31 @@ public sealed partial class MainWindow : Window
         RebuildPoints(cpu: false);
     }
 
+    void NavChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        ShowPage();
+    }
+
+    void ShowPage()
+    {
+        var machine = ReferenceEquals(Nav.SelectedItem, MachineNav);
+        FansPage.Visibility = machine ? Visibility.Collapsed : Visibility.Visible;
+        MachinePage.Visibility = machine ? Visibility.Visible : Visibility.Collapsed;
+        Nav.Header = machine ? UiText.MachineHeader : UiText.PageTitle;
+    }
+
     void ApplyLanguage()
     {
         Title = UiText.AppTitle;
-        PageTitle.Text = UiText.PageTitle;
+        Nav.PaneTitle = UiText.AppTitle;
+        FansNav.Content = UiText.PageTitle;
+        MachineNav.Content = UiText.MachineHeader;
+        ShowPage();
         SpeedTitle.Text = UiText.Speed;
         AutoMode.Content = UiText.AutoMode;
         ManualMode.Content = UiText.ManualMode;
@@ -117,6 +157,47 @@ public sealed partial class MainWindow : Window
         GpuSliderLabel.Text = UiText.FanPercent("GPU", (int)GpuSlider.Value);
         AutomationProperties.SetName(CpuSlider, UiText.CpuSliderName);
         AutomationProperties.SetName(GpuSlider, UiText.GpuSliderName);
+        CardProcessorLabel.Text = UiText.ProcessorLabel;
+        CardMemoryLabel.Text = UiText.MemoryLabel;
+        CardGraphicsLabel.Text = UiText.GraphicsLabel;
+        CardStorageLabel.Text = UiText.StorageLabel;
+        DeviceSectionTitle.Text = UiText.DeviceSection;
+        WindowsSectionTitle.Text = UiText.WindowsSection;
+        ComputerLabel.Text = UiText.ComputerLabel;
+        DeviceNameLabel.Text = UiText.DeviceNameLabel;
+        ProcessorLabel.Text = UiText.ProcessorLabel;
+        MemoryLabel.Text = UiText.MemoryLabel;
+        GraphicsLabel.Text = UiText.GraphicsLabel;
+        StorageLabel.Text = UiText.StorageLabel;
+        BiosLabel.Text = UiText.BiosLabel;
+        FanDriverLabel.Text = UiText.FanDriverLabel;
+        EditionLabel.Text = UiText.EditionLabel;
+        VersionLabel.Text = UiText.VersionLabel;
+        BuildLabel.Text = UiText.BuildLabel;
+        SystemTypeLabel.Text = UiText.SystemTypeLabel;
+        var machine = _machine;
+        DeviceTitle.Text = UiText.Value(machine?.DeviceName);
+        ModelSubtitle.Text = UiText.Value(machine?.Model);
+        CardProcessor.Text = UiText.Value(machine?.Processor);
+        CardProcessorSpeed.Text = machine?.ProcessorSpeed ?? "";
+        CardMemory.Text = UiText.Value(machine?.Memory);
+        CardGraphics.Text = UiText.Value(machine?.Graphics);
+        CardStorage.Text = UiText.Value(machine?.StorageTotal);
+        CardStorageUsed.Text = machine?.StorageUsed is null ? "" : UiText.StorageLine(machine.StorageUsed, machine.StorageTotal);
+        ComputerValue.Text = UiText.Value(machine?.Computer);
+        DeviceNameValue.Text = UiText.Value(machine?.DeviceName);
+        ProcessorValue.Text = UiText.Value(machine?.Processor);
+        MemoryValue.Text = UiText.Value(machine?.Memory);
+        GraphicsValue.Text = UiText.GraphicsLine(machine?.Graphics, machine?.GraphicsDriver);
+        StorageValue.Text = UiText.StorageLine(machine?.StorageUsed, machine?.StorageTotal);
+        BiosValue.Text = UiText.Value(machine?.Bios);
+        FanDriverValue.Text = UiText.MachineFan(machine?.FanDriverKnown ?? false, machine?.FanDriverRunning, machine?.FanDriverVersion, machine?.FanDevicePresent);
+        DriverSectionTitle.Text = UiText.DriverSection;
+        FillDrivers(machine?.Drivers);
+        EditionValue.Text = UiText.Value(machine?.WindowsName);
+        VersionValue.Text = UiText.Value(machine?.DisplayVersion);
+        BuildValue.Text = UiText.Value(machine?.Build);
+        SystemTypeValue.Text = UiText.SystemType(machine?.Is64Bit ?? Environment.Is64BitOperatingSystem);
     }
 
     void LanguageChanged(object sender, SelectionChangedEventArgs e)
@@ -128,7 +209,7 @@ public sealed partial class MainWindow : Window
 
         UiText.Set(item.Tag as string);
         _settings.Language = UiText.Code;
-        FanSettingsStore.Save(_settings);
+        TrySave();
         ApplyLanguage();
         RebuildPoints(cpu: true);
         RebuildPoints(cpu: false);
@@ -138,7 +219,7 @@ public sealed partial class MainWindow : Window
     {
         _queue.TryEnqueue(() =>
         {
-            StatusText.Text = sample.Status;
+            StatusText.Text = _saveError ?? sample.Status;
             TrayIcon.ToolTipText = UiText.AppTitle + "  " + sample.Status;
             CpuCoreText.Text = FormatCpuHeadline(sample);
             GpuCoreText.Text = sample.GpuShownC is int gpu ? $"{gpu}°C" : "—";
@@ -191,7 +272,54 @@ public sealed partial class MainWindow : Window
             PushManual();
         }
 
-        FanSettingsStore.Save(_settings);
+        TrySave();
+    }
+
+    void FillDrivers(IReadOnlyList<Hygeia.Hardware.DeviceDriver>? drivers)
+    {
+        DriverRows.Children.Clear();
+        if (drivers is null || drivers.Count == 0)
+        {
+            DriverRows.Children.Add(new TextBlock { Text = "—" });
+            return;
+        }
+
+        foreach (var driver in drivers)
+        {
+            var row = new Grid { ColumnSpacing = 24 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+            var label = new TextBlock
+            {
+                Text = UiText.DriverCategory(driver.Category),
+                Opacity = 0.8,
+                TextWrapping = TextWrapping.Wrap
+            };
+            var version = string.IsNullOrWhiteSpace(driver.Version) ? "—" : driver.Version;
+            var value = new TextBlock
+            {
+                Text = $"{driver.Name}  {version}",
+                TextWrapping = TextWrapping.Wrap
+            };
+            Grid.SetColumn(value, 1);
+            row.Children.Add(label);
+            row.Children.Add(value);
+            DriverRows.Children.Add(row);
+        }
+    }
+
+    void TrySave()
+    {
+        try
+        {
+            FanSettingsStore.Save(_settings);
+            _saveError = null;
+        }
+        catch (Exception ex)
+        {
+            _saveError = UiText.SaveFailed(ex.Message);
+            StatusText.Text = _saveError;
+        }
     }
 
     void ShowMode(FanMode mode)
@@ -220,7 +348,7 @@ public sealed partial class MainWindow : Window
         _settings.ManualCpu = cpu;
         _settings.ManualGpu = gpu;
         PushManual();
-        FanSettingsStore.Save(_settings);
+        TrySave();
     }
 
     void PushManual()
@@ -419,7 +547,7 @@ public sealed partial class MainWindow : Window
         }
 
         _session?.SetCurves(_settings.CpuPoints, _settings.GpuPoints);
-        FanSettingsStore.Save(_settings);
+        TrySave();
         if (rebuild && !RowsMatch(cpu, normalized))
         {
             RebuildPoints(cpu);
@@ -481,7 +609,17 @@ public sealed partial class MainWindow : Window
 
     void ShowFromTray(object sender, RoutedEventArgs e) => ShowFromTray();
 
-    void ExitFromTray(object sender, RoutedEventArgs e)
+    void OpenTrayMenu()
+    {
+        if (!GetCursorPos(out var point))
+        {
+            return;
+        }
+
+        TrayIcon.ShowContextMenu(point);
+    }
+
+    void ExitFromTray()
     {
         _allowClose = true;
         _session?.Dispose();
@@ -489,6 +627,11 @@ public sealed partial class MainWindow : Window
         TrayIcon.Dispose();
         Close();
     }
+
+    void ExitFromTray(object sender, RoutedEventArgs e) => ExitFromTray();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool GetCursorPos(out System.Drawing.Point point);
 }
 
 sealed class TrayCommand : ICommand

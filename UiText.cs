@@ -21,6 +21,7 @@ public static class UiText
     public static string NoTemp => Pick("读不到温度，已交回固件自动调速", "No temperature reading, returned to firmware control");
     public static string Auto(int cpu, int gpu) => English ? $"Auto: CPU {cpu}% / GPU {gpu}%" : $"自动：CPU {cpu}% / GPU {gpu}%";
     public static string ReadFailed(string message) => Pick("读取失败，已尝试交回自动：", "Read failed, tried to return to firmware: ") + message;
+    public static string SaveFailed(string message) => Pick("设置没有保存：", "Settings were not saved: ") + message;
     public static string Speed => Pick("调速", "Speed");
     public static string AutoMode => Pick("自动", "Auto");
     public static string ManualMode => Pick("手动", "Manual");
@@ -66,4 +67,93 @@ public static class UiText
         : $"风扇命令 0x{function:X2} 失败，Win32 {error}。";
     public static string CpuSliderName => English ? "CPU fan duty" : "CPU风扇占空比";
     public static string GpuSliderName => English ? "GPU fan duty" : "GPU风扇占空比";
+    public static string MachineHeader => Pick("本机", "This computer");
+    public static string ProcessorLabel => Pick("处理器", "Processor");
+    public static string MemoryLabel => Pick("内存", "Installed RAM");
+    public static string GraphicsLabel => Pick("显卡", "Graphics card");
+    public static string StorageLabel => Pick("存储", "Storage");
+    public static string DeviceSection => Pick("设备信息", "Device info");
+    public static string WindowsSection => Pick("Windows 信息", "Windows info");
+    public static string ComputerLabel => Pick("计算机", "Computer");
+    public static string DeviceNameLabel => Pick("设备名称", "Device name");
+    public static string BiosLabel => Pick("BIOS", "BIOS");
+    public static string FanDriverLabel => Pick("风扇驱动", "Fan driver");
+    public static string DriverSection => Pick("驱动", "Drivers");
+
+    public static string DriverCategory(string category) => category switch
+    {
+        "audio" => Pick("声卡", "Audio"),
+        "bluetooth" => Pick("蓝牙", "Bluetooth"),
+        _ => Pick("网卡", "Network")
+    };
+    public static string EditionLabel => Pick("版本", "Edition");
+    public static string VersionLabel => Pick("版本号", "Version");
+    public static string BuildLabel => Pick("内部版本", "OS build");
+    public static string SystemTypeLabel => Pick("系统类型", "System type");
+
+    public static string Value(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    public static string StorageLine(string? used, string? total)
+    {
+        if (string.IsNullOrWhiteSpace(total))
+        {
+            return "—";
+        }
+
+        if (string.IsNullOrWhiteSpace(used))
+        {
+            return total;
+        }
+
+        return English ? $"{used} of {total} used" : $"已用 {used} / {total}";
+    }
+
+    public static string GraphicsLine(string? name, string? driver)
+    {
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(driver))
+        {
+            return "—";
+        }
+
+        if (string.IsNullOrWhiteSpace(driver))
+        {
+            return name ?? "—";
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return driver;
+        }
+
+        return English ? $"{name}, driver {driver}" : $"{name}，驱动 {driver}";
+    }
+
+    public static string SystemType(bool is64Bit) => is64Bit
+        ? Pick("64 位操作系统，基于 x64 的处理器", "64-bit operating system, x64-based processor")
+        : Pick("32 位操作系统", "32-bit operating system");
+
+    public static string MachineFan(bool known, bool? running, string? version, bool? device)
+    {
+        if (!known)
+        {
+            return "—";
+        }
+
+        var service = running switch
+        {
+            true => Pick("AcpiBridge 正在运行", "AcpiBridge is running"),
+            false => Pick("AcpiBridge 已停止", "AcpiBridge is stopped"),
+            _ => Pick("AcpiBridge 未安装", "AcpiBridge is not installed")
+        };
+        var fileVersion = string.IsNullOrWhiteSpace(version) ? "—" : version;
+        var present = device switch
+        {
+            true => Pick("设备 ACPI\\CLV0001 存在", "device ACPI\\CLV0001 is present"),
+            false => Pick("设备 ACPI\\CLV0001 不存在", "device ACPI\\CLV0001 is missing"),
+            _ => "—"
+        };
+        return English
+            ? $"{service}, driver {fileVersion}, {present}"
+            : $"{service}，驱动 {fileVersion}，{present}";
+    }
 }
